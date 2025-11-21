@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\ProcessImportJob;
 use App\Models\Import;
+use App\Jobs\ProcessImportJob;
+use App\Http\Requests\StoreImportRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ImportController extends Controller
@@ -33,12 +33,8 @@ class ImportController extends Controller
         return view('imports.show', compact('import'));
     }
 
-    public function store(Request $request): RedirectResponse|JsonResponse
+    public function store(StoreImportRequest $request): RedirectResponse|JsonResponse
     {
-        $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt'],
-        ]);
-
         $file = $request->file('file');
 
         $path = $file->store('imports');
