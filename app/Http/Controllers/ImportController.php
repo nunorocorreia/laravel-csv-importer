@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Jobs\ProcessImportJob;
+use App\Models\Import;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\View\View;
+
+class ImportController extends Controller
+{
+    public function index(): View|JsonResponse
+    {
+        $imports = Import::recent()->paginate(20);
+
+        if (request()->wantsJson()) {
+            return response()->json($imports);
+        }
+
+        return view('imports.index', compact('imports'));
+    }
+
+    public function show(Import $import): View|JsonResponse
+    {
+        $import->load('errors');
+
+        if (request()->wantsJson()) {
+            return response()->json($import);
+        }
+
+        return view('imports.show', compact('import'));
+    }
+
+    public function store(Request $request): RedirectResponse|JsonResponse
+    {
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt'],
+        ]);
+
+        $file = $request->file('file');
+
+        $path = $file->store('imports');
+
+        $import = Import::create([
+            'filename' => $file->getClientOriginalName(),
+            'file_path' => $path,
+            'status' => 'pending',
+            'total_rows' => null,
+        ]);
+
+        ProcessImportJob::dispatch($import);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Import started!',
+                'import_id' => $import->id,
+            ], 201);
+        }
+
+        return redirect()
+            ->route('imports.show', $import)
+            ->with('status', 'Import started!');
+    }
+
+    public function status(Import $import): JsonResponse
+    {
+        return response()->json([
+            'id' => $import->id,
+            'status' => $import->status,
+            'processed_rows' => $import->processed_rows,
+            'total_rows' => $import->total_rows,
+            'error_count' => $import->error_count,
+            'started_at' => optional($import->started_at)->toDateTimeString(),
+            'finished_at' => optional($import->finished_at)->toDateTimeString(),
+        ]);
+    }
+}
+
+
