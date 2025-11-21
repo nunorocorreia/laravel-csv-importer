@@ -7,6 +7,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const statusEl = document.getElementById('status');
             const progressEl = document.getElementById('progress');
+            const batchEl = document.getElementById('batch-progress');
 
             const poll = () => {
                 fetch('{{ route('imports.status', $import) }}')
@@ -18,6 +19,12 @@
                             progressEl.textContent = `${data.processed_rows} / ${data.total_rows} (${percent}%)`;
                         } else {
                             progressEl.textContent = `${data.processed_rows} processed`;
+                        }
+
+                        if (data.batch_count !== null) {
+                            batchEl.textContent = `${data.completed_batches} / ${data.batch_count}`;
+                        } else {
+                            batchEl.textContent = '—';
                         }
 
                         if (data.status === 'finished' || data.status === 'failed') {
@@ -41,6 +48,7 @@
 <p>Status: <strong id="status">{{ $import->status }}</strong></p>
 <p>Progress: <span id="progress">{{ $import->processed_rows }} / {{ $import->total_rows ?? 'N/A' }}</span></p>
 <p>Errors: {{ $import->error_count }}</p>
+<p>Batches: <span id="batch-progress">{{ ! is_null($import->batch_count) ? $import->completed_batches . ' / ' . $import->batch_count : '—' }}</span></p>
 <p>Started: {{ optional($import->started_at)->toDayDateTimeString() ?? 'Pending' }}</p>
 <p>Finished: {{ optional($import->finished_at)->toDayDateTimeString() ?? 'N/A' }}</p>
 

@@ -15,6 +15,8 @@ return new class extends Migration {
             $table->unsignedBigInteger('total_rows')->nullable();
             $table->unsignedBigInteger('processed_rows')->default(0);
             $table->unsignedBigInteger('error_count')->default(0);
+            $table->unsignedInteger('batch_count')->nullable();
+            $table->unsignedInteger('completed_batches')->default(0);
             $table->timestamp('started_at')->nullable();
             $table->timestamp('finished_at')->nullable();
             $table->text('error_message')->nullable();

@@ -7,7 +7,6 @@ use App\Models\Import;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class ImportController extends Controller
@@ -73,6 +72,8 @@ class ImportController extends Controller
             'processed_rows' => $import->processed_rows,
             'total_rows' => $import->total_rows,
             'error_count' => $import->error_count,
+            'batch_count' => $import->batch_count,
+            'completed_batches' => $import->completed_batches,
             'started_at' => optional($import->started_at)->toDateTimeString(),
             'finished_at' => optional($import->finished_at)->toDateTimeString(),
         ]);

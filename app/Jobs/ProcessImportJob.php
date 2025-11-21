@@ -4,14 +4,12 @@ namespace App\Jobs;
 
 use App\Models\Import;
 use App\Models\ImportError;
-use App\Models\Product;
 use Exception;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class ProcessImportJob implements ShouldQueue
@@ -20,7 +18,9 @@ class ProcessImportJob implements ShouldQueue
 
     public Import $import;
 
-    public int $chunkSize = 1000;
+    public int $batchSize = 1000;
+
+    public string $delimiter = ';';
 
     public function __construct(Import $import)
     {
@@ -31,9 +31,16 @@ class ProcessImportJob implements ShouldQueue
     {
         $import = $this->import->fresh();
 
+        if (! $import) {
+            return;
+        }
+
         $import->update([
             'status' => 'processing',
             'started_at' => now(),
+            'processed_rows' => 0,
+            'error_count' => 0,
+            'completed_batches' => 0,
         ]);
 
         $path = $import->file_path;
@@ -59,70 +66,59 @@ class ProcessImportJob implements ShouldQueue
             return;
         }
 
-        $rowNumber = 0;
-        $header = null;
-        $batch = [];
-        $errorCount = 0;
+        $header = fgetcsv($handle, 0, $this->delimiter);
+
+        if ($header === false) {
+            fclose($handle);
+
+            $import->update([
+                'status' => 'failed',
+                'error_message' => 'Missing CSV header row',
+            ]);
+
+            return;
+        }
+
+        $batchPayload = [];
+        $batchNumber = 0;
+        $totalRows = 0;
+        $rowNumber = 1; // header row
+        $prepareStageErrors = 0;
+
+        Storage::makeDirectory('import_batches');
 
         try {
-            while (($data = fgetcsv($handle, 0, ';')) !== false) {
+            while (($row = fgetcsv($handle, 0, $this->delimiter)) !== false) {
                 $rowNumber++;
+                $totalRows++;
 
-                if ($rowNumber === 1) {
-                    $header = $data;
-                    continue;
-                }
-
-                if ($header !== null && count($data) !== count($header)) {
-                    $errorCount++;
+                if (count($row) !== count($header)) {
+                    $prepareStageErrors++;
                     ImportError::create([
                         'import_id' => $import->id,
                         'row_number' => $rowNumber,
-                        'row_data' => ['raw' => $data],
+                        'row_data' => ['raw' => $row],
                         'error_message' => 'Column count mismatch',
                     ]);
                     continue;
                 }
 
-                $row = $header
-                    ? array_combine($header, $data)
-                    : $this->mapRowWithoutHeader($data);
+                $mappedRow = array_combine($header, $row);
 
-                $validationError = $this->validateRow($row);
+                $batchPayload[] = [
+                    'row_number' => $rowNumber,
+                    'data' => $mappedRow,
+                ];
 
-                if ($validationError) {
-                    $errorCount++;
-                    ImportError::create([
-                        'import_id' => $import->id,
-                        'row_number' => $rowNumber,
-                        'row_data' => $row,
-                        'error_message' => $validationError,
-                    ]);
-                    continue;
-                }
-
-                $batch[] = $this->transformRowToProductData($row, $import->id);
-
-                if (count($batch) >= $this->chunkSize) {
-                    $this->storeBatch($batch);
-                    $import->increment('processed_rows', count($batch));
-                    $batch = [];
+                if (count($batchPayload) >= $this->batchSize) {
+                    $this->queueBatch($import->id, ++$batchNumber, $batchPayload);
+                    $batchPayload = [];
                 }
             }
 
-            if (count($batch) > 0) {
-                $this->storeBatch($batch);
-                $import->increment('processed_rows', count($batch));
+            if (count($batchPayload) > 0) {
+                $this->queueBatch($import->id, ++$batchNumber, $batchPayload);
             }
-
-            if ($import->total_rows === null) {
-                $import->total_rows = $import->processed_rows + $errorCount;
-            }
-
-            $import->error_count = $errorCount;
-            $import->status = 'finished';
-            $import->finished_at = now();
-            $import->save();
         } catch (Exception $e) {
             $import->update([
                 'status' => 'failed',
@@ -133,55 +129,35 @@ class ProcessImportJob implements ShouldQueue
         } finally {
             fclose($handle);
         }
-    }
 
-    protected function validateRow(array $row): ?string
-    {
-        if (empty($row['external_id'] ?? null)) {
-            return 'Missing external_id';
+        if ($batchNumber === 0) {
+            $import->update([
+                'total_rows' => $totalRows,
+                'batch_count' => 0,
+                'completed_batches' => 0,
+                'error_count' => $prepareStageErrors,
+                'status' => 'finished',
+                'finished_at' => now(),
+            ]);
+
+            return;
         }
 
-        if (empty($row['name'] ?? null)) {
-            return 'Missing name';
-        }
-
-        return null;
+        $import->update([
+            'total_rows' => $totalRows,
+            'batch_count' => $batchNumber,
+            'completed_batches' => 0,
+            'error_count' => $prepareStageErrors,
+        ]);
     }
 
-    protected function transformRowToProductData(array $row, int $importId): array
+    protected function queueBatch(int $importId, int $batchNumber, array $payload): void
     {
-        return [
-            'import_id' => $importId,
-            'external_id' => $row['external_id'],
-            'name' => $row['name'],
-            'price' => isset($row['price']) ? (float) $row['price'] : null,
-            'stock' => isset($row['stock']) ? (int) $row['stock'] : 0,
-            'active' => isset($row['active']) ? (bool) $row['active'] : true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
-    }
+        $path = "import_batches/import_{$importId}_batch_{$batchNumber}.json";
 
-    protected function mapRowWithoutHeader(array $data): array
-    {
-        return [
-            'external_id' => $data[0] ?? null,
-            'name' => $data[1] ?? null,
-            'price' => $data[2] ?? null,
-            'stock' => $data[3] ?? null,
-            'active' => $data[4] ?? null,
-        ];
-    }
+        Storage::put($path, json_encode($payload));
 
-    protected function storeBatch(array $batch): void
-    {
-        DB::transaction(function () use ($batch) {
-            Product::upsert(
-                $batch,
-                ['external_id'],
-                ['name', 'price', 'stock', 'active', 'import_id', 'updated_at']
-            );
-        });
+        ProcessProductChunkJob::dispatch($importId, $batchNumber, $path);
     }
 }
 

@@ -18,6 +18,8 @@ class Import extends Model
         'total_rows',
         'processed_rows',
         'error_count',
+        'batch_count',
+        'completed_batches',
         'started_at',
         'finished_at',
         'error_message',
