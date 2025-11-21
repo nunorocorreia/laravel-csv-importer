@@ -31,7 +31,7 @@ class ProcessImportJob implements ShouldQueue
     {
         $import = $this->import->fresh();
 
-        if (! $import) {
+        if (!$import) {
             return;
         }
 
@@ -45,7 +45,7 @@ class ProcessImportJob implements ShouldQueue
 
         $path = $import->file_path;
 
-        if (! Storage::exists($path)) {
+        if (!Storage::exists($path)) {
             $import->update([
                 'status' => 'failed',
                 'error_message' => 'File not found',
@@ -57,7 +57,7 @@ class ProcessImportJob implements ShouldQueue
         $fullPath = Storage::path($path);
         $handle = fopen($fullPath, 'r');
 
-        if (! $handle) {
+        if (!$handle) {
             $import->update([
                 'status' => 'failed',
                 'error_message' => 'Could not open file',
