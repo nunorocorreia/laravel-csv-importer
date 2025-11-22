@@ -22,9 +22,12 @@ class ProcessImportJob implements ShouldQueue
 
     public string $delimiter = ';';
 
+    protected string $disk;
+
     public function __construct(Import $import)
     {
         $this->import = $import;
+        $this->disk = config('imports.storage_disk', 's3');
     }
 
     public function handle(): void
@@ -44,23 +47,23 @@ class ProcessImportJob implements ShouldQueue
         ]);
 
         $path = $import->file_path;
+        $disk = Storage::disk($this->disk);
 
-        if (!Storage::exists($path)) {
+        if (!$disk->exists($path)) {
             $import->update([
                 'status' => 'failed',
-                'error_message' => 'File not found',
+                'error_message' => 'File not found on cloud storage',
             ]);
 
             return;
         }
 
-        $fullPath = Storage::path($path);
-        $handle = fopen($fullPath, 'r');
+        $handle = $disk->readStream($path);
 
         if (!$handle) {
             $import->update([
                 'status' => 'failed',
-                'error_message' => 'Could not open file',
+                'error_message' => 'Could not open file stream',
             ]);
 
             return;
@@ -126,9 +129,9 @@ class ProcessImportJob implements ShouldQueue
             ]);
 
             report($e);
-        } finally {
-            fclose($handle);
         }
+
+        fclose($handle);
 
         if ($batchNumber === 0) {
             $import->update([

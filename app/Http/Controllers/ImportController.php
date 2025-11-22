@@ -35,23 +35,32 @@ class ImportController extends Controller
 
     public function store(StoreImportRequest $request): RedirectResponse|JsonResponse
     {
-        $file = $request->file('file');
+        $data = $request->validated();
+        $disk = config('imports.storage_disk', 's3');
+        $filename = $data['originalFilename'] ?? null;
+        $fileKey = $data['fileKey'] ?? null;
 
-        $path = $file->store('imports');
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $filename = $file->getClientOriginalName();
+            $fileKey = $file->store('imports', $disk);
+        }
 
         $import = Import::create([
-            'filename' => $file->getClientOriginalName(),
-            'file_path' => $path,
+            'filename' => $filename,
+            'file_path' => $fileKey,
             'status' => 'pending',
             'total_rows' => null,
+            'processed_rows' => 0,
+            'error_count' => 0,
         ]);
 
         ProcessImportJob::dispatch($import);
 
         if ($request->wantsJson()) {
             return response()->json([
-                'message' => 'Import started!',
-                'import_id' => $import->id,
+                'importId' => $import->id,
+                'status' => $import->status,
             ], 201);
         }
 

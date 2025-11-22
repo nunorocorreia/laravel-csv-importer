@@ -29,11 +29,11 @@ class ProcessProductChunkJob implements ShouldQueue
     {
         $import = Import::find($this->importId);
 
-        if (! $import) {
+        if (!$import) {
             return;
         }
 
-        if (! Storage::exists($this->path)) {
+        if (!Storage::exists($this->path)) {
             $import->update([
                 'status' => 'failed',
                 'error_message' => "Missing batch file: {$this->path}",
@@ -44,7 +44,7 @@ class ProcessProductChunkJob implements ShouldQueue
 
         $payload = json_decode(Storage::get($this->path), true);
 
-        if (! is_array($payload)) {
+        if (!is_array($payload)) {
             Storage::delete($this->path);
             $import->update([
                 'status' => 'failed',
@@ -125,9 +125,9 @@ class ProcessProductChunkJob implements ShouldQueue
             'import_id' => $importId,
             'external_id' => $row['external_id'],
             'name' => $row['name'],
-            'price' => isset($row['price']) ? (float) $row['price'] : null,
-            'stock' => isset($row['stock']) ? (int) $row['stock'] : 0,
-            'active' => isset($row['active']) ? (bool) $row['active'] : true,
+            'price' => isset($row['price']) ? (float)$row['price'] : null,
+            'stock' => isset($row['stock']) ? (int)$row['stock'] : 0,
+            'active' => isset($row['active']) ? (bool)$row['active'] : true,
             'created_at' => now(),
             'updated_at' => now(),
         ];
@@ -148,7 +148,7 @@ class ProcessProductChunkJob implements ShouldQueue
     {
         $import = Import::find($this->importId);
 
-        if (! $import) {
+        if (!$import) {
             return;
         }
 

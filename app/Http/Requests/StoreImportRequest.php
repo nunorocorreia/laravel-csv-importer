@@ -14,7 +14,9 @@ class StoreImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => ['required', 'file', 'mimes:csv,txt'],
+            'file' => ['required_without:fileKey', 'file', 'mimes:csv,txt'],
+            'fileKey' => ['required_without:file', 'string'],
+            'originalFilename' => ['required_with:fileKey', 'string'],
         ];
     }
 }
